@@ -1,0 +1,7 @@
+language: cpp
+dist: bionic
+compiler: gcc
+
+script: 
+  - g++ -I/ test.cpp -std=c++17 -o build
+  - ./build
