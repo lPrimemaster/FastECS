@@ -1,2 +1,2 @@
 # FastECS
-Simplistic Entity Component System for general purpose games (with GC!)
+A simplistic C++ Entity Component System for general purpose (with GC!)
