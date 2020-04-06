@@ -11,10 +11,48 @@ public:
 	FCS_COMPONENT(Transform);
 };
 
+class TransformSystem : public FCS::System, FCS::EventSubscriber<float>, FCS::EventSubscriber<int>
+{
+public:
+	virtual void initialize(FCS::Scene* scene) override
+	{
+		auto test = dynamic_cast<FCS::EventSubscriber<float>*>(this);
+		FCS::EventSubscriber<float>::subscribe(scene, this);
+		FCS::EventSubscriber<int>::subscribe(scene, this);
+	}
+
+	virtual void deinitialize(FCS::Scene* scene) override
+	{
+		FCS::EventSubscriber<float>::unsubscribe(scene, this);
+		FCS::EventSubscriber<int>::unsubscribe(scene, this);
+	}
+
+	virtual void update(FCS::Scene* scene, float deltaTime) override
+	{
+
+	}
+
+	virtual void onEvent(FCS::Scene* scene, const float& event) override
+	{
+		std::cout << "Recieved float evt" << std::endl;
+	}
+
+	virtual void onEvent(FCS::Scene* scene, const int& event) override
+	{
+		std::cout << "Recieved int evt" << std::endl;
+	}
+};
 
 int main(int argc, char* argv[])
 {
 	FCS::Scene scene = FCS::Scene::Create();
+
+	auto sys = scene.createSystem<TransformSystem>();
+
+	scene.emit<float>(9);
+	scene.emit<int>(9);
+
+	scene.deleteSystem<TransformSystem>();
 
 	FCS::Handle<FCS::Entity> eh1 = scene.instantiate();
 
