@@ -16,15 +16,14 @@ class TransformSystem : public FCS::System, FCS::EventSubscriber<float>, FCS::Ev
 public:
 	virtual void initialize(FCS::Scene* scene) override
 	{
-		auto test = dynamic_cast<FCS::EventSubscriber<float>*>(this);
-		FCS::EventSubscriber<float>::subscribe(scene, this);
-		FCS::EventSubscriber<int>::subscribe(scene, this);
+		FCS::EventSubscriber<float>::subscribe(scene);
+		FCS::EventSubscriber<int>::subscribe(scene);
 	}
 
 	virtual void deinitialize(FCS::Scene* scene) override
 	{
-		FCS::EventSubscriber<float>::unsubscribe(scene, this);
-		FCS::EventSubscriber<int>::unsubscribe(scene, this);
+		FCS::EventSubscriber<float>::unsubscribe(scene);
+		FCS::EventSubscriber<int>::unsubscribe(scene);
 	}
 
 	virtual void update(FCS::Scene* scene, float deltaTime) override
@@ -47,8 +46,7 @@ int main(int argc, char* argv[])
 {
 	FCS::Scene scene = FCS::Scene::Create();
 
-	auto sys = scene.createSystem<TransformSystem>();
-
+	scene.createSystem<TransformSystem>();
 	scene.emit<float>(9);
 	scene.emit<int>(9);
 

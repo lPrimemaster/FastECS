@@ -12,6 +12,8 @@
 
 #define FCS_COMPONENT(name) private: virtual std::shared_ptr<Component> clone() override { return std::make_shared<name>(*this); }
 
+#define SYSTEM_NOHANDLE
+
 namespace FCS
 {
 	template<typename T>
@@ -39,7 +41,7 @@ namespace FCS
 	class Scene;
 	class System;
 
-	// TODO: Threadable and Use Observer
+	// TODO: Threadable
 	class Subscriber
 	{
 	public:
@@ -55,11 +57,11 @@ namespace FCS
 
 	protected:
 		virtual void onEvent(Scene* scene, const Evt& event) = 0;
-		inline void subscribe(Scene* scene, System* system);
-		inline void unsubscribe(Scene* scene, System* system);
+		inline void subscribe(Scene* scene);
+		inline void unsubscribe(Scene* scene);
 	};
 
-	class System : public std::enable_shared_from_this<System>
+	class System
 	{
 	public:
 		virtual ~System() { }
@@ -138,8 +140,13 @@ namespace FCS
 		inline Handle<Entity> instantiate(Handle<Entity> copy = Handle<Entity>());
 		inline void destroy(Handle<Entity> value);
 
+#ifndef SYSTEM_NOHANDLE
 		template<typename System>
 		inline Handle<System> createSystem();
+#else
+		template<typename System>
+		inline void createSystem();
+#endif
 		template<typename System>
 		inline void deleteSystem();
 
@@ -157,8 +164,10 @@ namespace FCS
 	private:
 		std::vector<std::shared_ptr<Entity>> entities;
 		std::unordered_map<std::type_index, std::shared_ptr<System>> systems;
-		std::unordered_map<std::type_index, std::vector<std::weak_ptr<Subscriber>>> subscribers;
+		std::unordered_map<std::type_index, std::vector<Subscriber*>> subscribers;
 	};
+
+	//TODO: Create a state system to push scenes back!
 
 	inline void Scene::start()
 	{
@@ -230,6 +239,7 @@ namespace FCS
 		return Handle<T>();
 	}
 
+#ifndef SYSTEM_NOHANDLE
 	template<typename System>
 	inline Handle<System> Scene::createSystem()
 	{
@@ -238,6 +248,15 @@ namespace FCS
 		shared->initialize(this);
 		return Handle<System>(shared);
 	}
+#else
+	template<typename System>
+	inline void Scene::createSystem()
+	{
+		auto shared = std::make_shared<System>();
+		systems.emplace(getType<System>(), shared);
+		shared->initialize(this);
+	}
+#endif
 
 	template<typename System>
 	inline void Scene::deleteSystem()
@@ -258,36 +277,35 @@ namespace FCS
 		{
 			for (auto base : found->second)
 			{
-				auto* sub = reinterpret_cast<EventSubscriber<T>*>(base.lock().get());
+				auto* sub = reinterpret_cast<EventSubscriber<T>*>(base);
 				sub->onEvent(this, event);
 			}
 		}
 	}
 
 	template<typename Evt>
-	inline void EventSubscriber<Evt>::subscribe(Scene* scene, System* system)
+	inline void EventSubscriber<Evt>::subscribe(Scene* scene)
 	{
 		auto found = scene->subscribers.find(getType<Evt>());
 		if (found != scene->subscribers.end())
 		{
-			found->second.push_back(std::dynamic_pointer_cast<EventSubscriber>(system->shared_from_this()));
+			found->second.push_back(this);
 		}
 		else
 		{
-			auto test = system->shared_from_this();
-			scene->subscribers.insert({ getType<Evt>(), { std::dynamic_pointer_cast<EventSubscriber>(test) } });
+			scene->subscribers.insert({ getType<Evt>(), { this } });
 		}
 	}
 
 	template<typename Evt>
-	inline void EventSubscriber<Evt>::unsubscribe(Scene* scene, System* system)
+	inline void EventSubscriber<Evt>::unsubscribe(Scene* scene)
 	{
 		auto found = scene->subscribers.find(getType<Evt>());
 		if (found != scene->subscribers.end())
 		{
 			for (unsigned int i = 0; i < found->second.size(); i++)
 			{
-				if (std::dynamic_pointer_cast<EventSubscriber>(system->shared_from_this()) == found->second[i].lock())
+				if (this == found->second[i])
 				{
 					found->second.erase(found->second.begin() + i);
 				}
