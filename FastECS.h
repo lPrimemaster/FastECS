@@ -11,6 +11,8 @@
 #include <memory>
 #include <stack>
 
+// Shloud define some aspect to draw before the other updates in case this project gets extended
+
 #define FCS_COMPONENT(name) private: virtual std::shared_ptr<Component> clone() override { return std::make_shared<name>(*this); }
 
 #define SYSTEM_NOHANDLE
@@ -40,6 +42,8 @@ namespace FCS
 	};
 
 	class Scene;
+
+	template<typename... U>
 	class System;
 
 	// TODO: Threadable
@@ -53,29 +57,73 @@ namespace FCS
 	class EventSubscriber : public Subscriber
 	{
 	public:
+		template<typename... U>
+		friend class System;
 		friend class Scene;
 		virtual ~EventSubscriber() { }
 
 	protected:
 		virtual void onEvent(Scene* scene, const Evt& event) = 0;
+
+	private:
 		inline void subscribe(Scene* scene);
 		inline void unsubscribe(Scene* scene);
 	};
 
-	class System
+	class BaseSystem
 	{
 	public:
-		virtual ~System() { }
+		virtual ~BaseSystem() { }
+
 		virtual void initialize(Scene* scene) = 0;
 		virtual void deinitialize(Scene* scene) = 0;
 		virtual void update(Scene* scene, float deltaTime) = 0;
+
+	protected:
+		std::unordered_map<std::type_index, std::vector<std::weak_ptr<Component>>> specificComponents; //TODO: This will be targeted later
+		bool isActive = true;
+	};
+
+	template<typename... Events>
+	class System : public BaseSystem, public EventSubscriber<Events>...
+	{
+	public:
+		friend class Scene;
+		virtual ~System() { }
+		
+	private:
+		inline void internal_initialize(Scene* scene);
+		inline void internal_deinitialize(Scene* scene);
 
 	public:
 		System() { }
 
 	private:
-		std::vector<std::weak_ptr<Component>> specificComponents;
-		bool isActive = true;
+		template <typename U>
+		void call_subscribe(Scene* scene)
+		{
+			FCS::EventSubscriber<U>::subscribe(scene);
+		}
+
+		template <typename U>
+		void call_unsubscribe(Scene* scene)
+		{
+			FCS::EventSubscriber<U>::unsubscribe(scene);
+		}
+
+		template <typename U, typename... Us>
+		inline typename std::enable_if< (sizeof...(Us) > 0) >::type call_subscribe(Scene* scene)
+		{
+			FCS::EventSubscriber<U>::subscribe(scene);
+			call_subscribe<Us...>(scene);
+		}
+
+		template <typename U, typename... Us>
+		inline typename std::enable_if< (sizeof...(Us) > 0) >::type call_unsubscribe(Scene* scene)
+		{
+			FCS::EventSubscriber<U>::unsubscribe(scene);
+			call_unsubscribe<Us...>(scene);
+		}
 	};
 
 	template<typename T>
@@ -94,6 +142,7 @@ namespace FCS
 			return data.lock().get();
 		}
 
+		// Checks if the rvalue inside the handle is valid
 		inline bool expired()
 		{
 			return data.expired();
@@ -105,7 +154,7 @@ namespace FCS
 
 	class Entity
 	{
-	public:
+	public: //TODO: This should be removed from public access
 		Entity() { }
 		Entity(const Entity& other)
 		{
@@ -116,14 +165,25 @@ namespace FCS
 		}
 
 	public:
+		// Add a component of type to the entity
 		template<typename T>
 		inline Handle<T> addComponent();
 
+		// Remove a comnponent of type from the entity
 		template<typename T>
 		inline void removeComponent();
 
+		// Get a component of type in the entity
 		template<typename T>
 		inline Handle<T> getComponent();
+
+		// Check entity has a type of component
+		template<typename T>
+		inline bool has();
+
+		// Check entity has all types of components
+		template<typename T, typename U, typename... Args>
+		inline bool has();
 
 	private:
 		std::unordered_map<std::type_index, std::shared_ptr<Component>> components;
@@ -143,45 +203,66 @@ namespace FCS
 		};
 	}
 
+	class SceneManager;
+
 	class Scene
 	{
 	public:
 		template<typename U>
 		friend class EventSubscriber;
-		inline virtual void initialize();
-		inline void update(float deltaTime); //FIX: Decide how to handle this later! Should this be overridable
+		friend class SceneManager;
 
+	protected:
+		// User code to initialize the scene
+		inline virtual void initialize() = 0;
+
+		// User code to clean the scene
+		inline virtual void deinitialize() = 0;
+
+	public:
+		// Instantiates a entity on the scene
 		inline Handle<Entity> instantiate(Handle<Entity> copy = Handle<Entity>());
+
+		// Destroys an entity on the scene
 		inline void destroy(Handle<Entity> value);
 
+		// Get all entities on the scene
+		inline std::vector<Handle<Entity>> getAll();
+
+		// Get all the entities that have all selected types in the scene
+		template<typename... Types>
+		inline std::vector<Handle<Entity>> getAllWith();
+
 #ifndef SYSTEM_NOHANDLE
+		// Create a system in the scene
 		template<typename System>
 		inline Handle<System> createSystem();
 #else
+		// Create a system in the scene
 		template<typename System>
 		inline void createSystem();
 #endif
+		// Remove a system from the scene
 		template<typename System>
 		inline void deleteSystem();
 
+		// Emit an event to all active subscribers
 		template<typename T>
 		inline void emit(const T& event);
 
-		inline static Scene Create()
-		{
-			return Scene();
-		}
+	private:
+		inline void internal_update(float deltaTime);
 
 	public:
 		Scene() { }
 
 	private:
 		std::vector<std::shared_ptr<Entity>> entities;
-		std::unordered_map<std::type_index, std::shared_ptr<System>> systems;
+		std::unordered_map<std::type_index, std::shared_ptr<BaseSystem>> systems;
 		std::unordered_map<std::type_index, std::vector<Subscriber*>> subscribers;
 	};
 
-	//TODO: Extend states system
+	//TODO: Extend states system (?)
 
 	class SceneManager
 	{
@@ -189,10 +270,15 @@ namespace FCS
 		inline void update();
 
 	public:
+		// Loads the selected scene on top of the stack
 		template<typename Scene>
 		static void LoadScene(bool unloadLast = false);
 
+		// Unloads last scene (top of stack)
 		static void UnloadScene();
+
+		// Get all scenes in the stack
+		static std::size_t GetSceneCount();
 
 	private:
 		static inline SceneManager& Instance()
@@ -208,12 +294,7 @@ namespace FCS
 		std::stack<std::unique_ptr<Scene>> scenes;
 	};
 
-	inline void Scene::initialize()
-	{
-
-	}
-
-	inline void Scene::update(float deltaTime)
+	inline void Scene::internal_update(float deltaTime)
 	{
 		for (auto tsp : systems)
 		{
@@ -256,6 +337,31 @@ namespace FCS
 		}
 	}
 
+	inline std::vector<Handle<Entity>> Scene::getAll()
+	{
+		std::vector<Handle<Entity>> ret;
+		ret.reserve(entities.size());
+		for (auto ent : entities)
+		{
+			ret.push_back(Handle<Entity>(ent));
+		}
+		return ret;
+	}
+
+	template<typename ...Types>
+	inline std::vector<Handle<Entity>> Scene::getAllWith()
+	{
+		std::vector<Handle<Entity>> ret;
+		for (auto ent : entities)
+		{
+			if (ent->has<Types...>())
+			{
+				ret.push_back(Handle<Entity>(ent));
+			}
+		}
+		return ret;
+	}
+
 	template<typename T>
 	inline Handle<T> Entity::addComponent()
 	{
@@ -283,13 +389,25 @@ namespace FCS
 		return Handle<T>();
 	}
 
+	template<typename T>
+	inline bool Entity::has()
+	{
+		return components.find(getType<T>()) != components.end();
+	}
+
+	template<typename T, typename U, typename... Args>
+	inline bool Entity::has()
+	{
+		return has<T>() && has<U, Args...>();
+	}
+
 #ifndef SYSTEM_NOHANDLE
 	template<typename System>
 	inline Handle<System> Scene::createSystem()
 	{
 		auto shared = std::make_shared<System>();
 		systems.emplace(getType<System>(), shared);
-		shared->initialize(this);
+		shared->internal_initialize(this);
 		return Handle<System>(shared);
 	}
 #else
@@ -298,7 +416,7 @@ namespace FCS
 	{
 		auto shared = std::make_shared<System>();
 		systems.emplace(getType<System>(), shared);
-		shared->initialize(this);
+		shared->internal_initialize(this);
 	}
 #endif
 
@@ -308,7 +426,7 @@ namespace FCS
 		auto found = systems.find(getType<System>());
 		if (found != systems.end())
 		{
-			found->second->deinitialize(this);
+			found->second->internal_deinitialize(this);
 			systems.erase(getType<System>());
 		}
 	}
@@ -325,6 +443,26 @@ namespace FCS
 				sub->onEvent(this, event);
 			}
 		}
+	}
+
+	template<typename... Events>
+	inline void System<Events...>::internal_initialize(Scene* scene)
+	{
+		// Subscribe to templated events
+		call_subscribe<Events...>(scene);
+
+		// User defined initialize
+		initialize(scene);
+	}
+
+	template<typename... Events>
+	inline void System<Events...>::internal_deinitialize(Scene* scene)
+	{
+		// User defined deinitialize
+		deinitialize(scene);
+
+		// Unsubscribe to templated events
+		call_unsubscribe<Events...>(scene);
 	}
 
 	template<typename Evt>
@@ -363,8 +501,8 @@ namespace FCS
 
 	inline void SceneManager::update()
 	{
-		//FIX: 0 placeholder for now in delta time
-		scenes.top()->update(0);
+		//FIX: Use clock instead of the constant 0 placeholder in delta time
+		scenes.top()->internal_update(0);
 	}
 
 	template<typename Scene>
@@ -377,6 +515,7 @@ namespace FCS
 			sm.scenes.pop();
 		}
 
+		static_assert(!std::is_abstract<Scene>(), "Can't initialize an abstract scene!");
 		auto uscene = std::make_unique<Scene>();
 		uscene->initialize();
 		sm.scenes.push(std::move(uscene));
@@ -390,5 +529,9 @@ namespace FCS
 			// This should call last loaded scene's dtor
 			sm.scenes.pop();
 		}
+	}
+	inline std::size_t SceneManager::GetSceneCount()
+	{
+		return Instance().scenes.size();
 	}
 }

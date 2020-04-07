@@ -10,44 +10,42 @@ public:
 	FCS_COMPONENT(Transform);
 };
 
-class TransformSystem : public FCS::System, FCS::EventSubscriber<FCS::Event::EntityCreated>, FCS::EventSubscriber<FCS::Event::EntityDestroyed>
+class TransformSystem : public FCS::System<FCS::Event::EntityCreated>
 {
 public:
-	virtual void initialize(FCS::Scene* scene) override
+	void initialize(FCS::Scene* scene) override
 	{
-		FCS::EventSubscriber<FCS::Event::EntityCreated>::subscribe(scene);
-		FCS::EventSubscriber<FCS::Event::EntityDestroyed>::subscribe(scene);
+		auto ent_wout = scene->instantiate();
+		auto ent_with = scene->getAllWith<Transform>();
 	}
 
-	virtual void deinitialize(FCS::Scene* scene) override
+	void deinitialize(FCS::Scene* scene) override
 	{
-		FCS::EventSubscriber<FCS::Event::EntityCreated>::unsubscribe(scene);
-		FCS::EventSubscriber<FCS::Event::EntityDestroyed>::unsubscribe(scene);
+
 	}
 
-	virtual void update(FCS::Scene* scene, float deltaTime) override
+	void update(FCS::Scene* scene, float deltaTime) override
 	{
 		
 	}
 
-	virtual void onEvent(FCS::Scene* scene, const FCS::Event::EntityCreated& event)
+	void onEvent(FCS::Scene* scene, const FCS::Event::EntityCreated& event)
 	{
 		std::cout << "Entity " << typeid(event.entity).name() << " was created!" << std::endl;
-	}
-
-	virtual void onEvent(FCS::Scene* scene, const FCS::Event::EntityDestroyed& event)
-	{
-		std::cout << "Entity " << typeid(event.entity).name() << " was destroyed!" << std::endl;
 	}
 };
 
 class MyScene : public FCS::Scene
 {
 public:
-	virtual void initialize() override
+	void initialize() override
 	{
 		createSystem<TransformSystem>();
-		auto ent = instantiate();
+	}
+
+	void deinitialize() override
+	{
+		//Empty
 	}
 };
 
@@ -55,7 +53,6 @@ int main(int argc, char* argv[])
 {
 	// Extended test
 	FCS::SceneManager::LoadScene<MyScene>();
-
 	FCS::SceneManager::UnloadScene();
 
 	// Single tests
