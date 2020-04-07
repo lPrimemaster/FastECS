@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <chrono>
 #include <memory>
+#include <stack>
 
 #define FCS_COMPONENT(name) private: virtual std::shared_ptr<Component> clone() override { return std::make_shared<name>(*this); }
 
@@ -110,7 +111,7 @@ namespace FCS
 		{
 			for (auto oc : other.components)
 			{
-				components.insert({ oc.first, oc.second->clone() /*std::make_shared<Component>(*oc.second.get())*/ });
+				components.insert({ oc.first, oc.second->clone() });
 			}
 		}
 
@@ -129,13 +130,26 @@ namespace FCS
 		bool isActive = true;
 	};
 
+	namespace Event
+	{
+		struct EntityCreated
+		{
+			Handle<Entity> entity;
+		};
+
+		struct EntityDestroyed
+		{
+			Handle<Entity> entity;
+		};
+	}
+
 	class Scene
 	{
 	public:
 		template<typename U>
 		friend class EventSubscriber;
-		inline void start();
-		inline void update(float deltaTime);
+		inline virtual void initialize();
+		inline void update(float deltaTime); //FIX: Decide how to handle this later! Should this be overridable
 
 		inline Handle<Entity> instantiate(Handle<Entity> copy = Handle<Entity>());
 		inline void destroy(Handle<Entity> value);
@@ -158,7 +172,7 @@ namespace FCS
 			return Scene();
 		}
 
-	private:
+	public:
 		Scene() { }
 
 	private:
@@ -167,9 +181,34 @@ namespace FCS
 		std::unordered_map<std::type_index, std::vector<Subscriber*>> subscribers;
 	};
 
-	//TODO: Create a state system to push scenes back!
+	//TODO: Extend states system
 
-	inline void Scene::start()
+	class SceneManager
+	{
+	private:
+		inline void update();
+
+	public:
+		template<typename Scene>
+		static void LoadScene(bool unloadLast = false);
+
+		static void UnloadScene();
+
+	private:
+		static inline SceneManager& Instance()
+		{
+			static SceneManager instance;
+			return instance;
+		}
+
+	private:
+		SceneManager() = default;
+
+	private:
+		std::stack<std::unique_ptr<Scene>> scenes;
+	};
+
+	inline void Scene::initialize()
 	{
 
 	}
@@ -186,12 +225,16 @@ namespace FCS
 	{
 		if (copy.expired())
 		{
-			entities.push_back(std::move(std::make_shared<Entity>()));
+			auto ent = std::make_shared<Entity>();
+			entities.push_back(ent);
+			emit<Event::EntityCreated>({ Handle<Entity>(ent) });
 			return Handle<Entity>(*(entities.end() - 1));
 		}
 		else
 		{
-			entities.push_back((std::move(std::make_shared<Entity>(*copy.data.lock().get()))));
+			auto ent = std::make_shared<Entity>(*copy.data.lock().get());
+			entities.push_back(ent);
+			emit<Event::EntityCreated>({ Handle<Entity>(ent) });
 			return Handle<Entity>(*(entities.end() - 1));
 		}
 	}
@@ -206,7 +249,8 @@ namespace FCS
 		{
 			if (*it == newValue)
 			{
-				// This calls the destructor
+				emit<Event::EntityDestroyed>({ Handle<Entity>(*it) });
+				// This calls the dtor
 				entities.erase(it);
 			}
 		}
@@ -314,6 +358,37 @@ namespace FCS
 			{
 				scene->subscribers.erase(found);
 			}
+		}
+	}
+
+	inline void SceneManager::update()
+	{
+		//FIX: 0 placeholder for now in delta time
+		scenes.top()->update(0);
+	}
+
+	template<typename Scene>
+	inline void SceneManager::LoadScene(bool unloadLast)
+	{
+		SceneManager& sm = Instance();
+		if (unloadLast && !sm.scenes.empty())
+		{
+			// This should call last loaded scene's dtor
+			sm.scenes.pop();
+		}
+
+		auto uscene = std::make_unique<Scene>();
+		uscene->initialize();
+		sm.scenes.push(std::move(uscene));
+	}
+
+	inline void SceneManager::UnloadScene()
+	{
+		SceneManager& sm = Instance();
+		if (!sm.scenes.empty())
+		{
+			// This should call last loaded scene's dtor
+			sm.scenes.pop();
 		}
 	}
 }
