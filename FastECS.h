@@ -1,5 +1,30 @@
+/*
+MIT License
+
+Copyright (c) 2020 César Godinho
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #pragma once
-// This is my attempt to create a very simplistic unity like ECS
+/* Part of the credit goes to Sam Bloomberg and his repo about ECS, available at: https://github.com/redxdev/ECS */
+// This is my attempt to create a very simplistic unity like engine
 // Still a work in progress
 #include <typeindex>
 #include <algorithm>
@@ -12,10 +37,20 @@
 #include <stack>
 
 // Shloud define some aspect to draw before the other updates in case this project gets extended
+/* 
+   TODO 
+
+ - Add Rendering
+ - Add Scripting
+ - Add Mesh loading (prob 3rd party)
+ - Add timing
+ - Add math commons
+ - Add Physics (prob 3rd party)
+ */
 
 #define FCS_COMPONENT(name) private: virtual std::shared_ptr<Component> clone() override { return std::make_shared<name>(*this); }
 
-#define SYSTEM_NOHANDLE
+#define SYSTEM_NOHANDLE // Makes it so the createSystem does not return a Handle<SystemType>
 
 namespace FCS
 {
