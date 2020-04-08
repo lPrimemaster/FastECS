@@ -33,7 +33,8 @@ SOFTWARE.
 // Still a work in progress
 #include <typeindex>
 #include <algorithm>
-#include <stdint.h>
+#include <cstdint>
+#include <cstring>
 #include <unordered_map> 
 #include <functional>
 #include <type_traits>
@@ -670,7 +671,7 @@ namespace resource_loader
 		inline static T readPackedStruct(byte** buffer)
 		{
 			T value;
-			memcpy((byte*)&value, *buffer, sizeof(T));
+			std::memcpy((byte*)&value, *buffer, sizeof(T));
 			*buffer += sizeof(T);
 			return value;
 		}
@@ -781,7 +782,7 @@ namespace resource_loader
 			{
 				if (image_data != nullptr)
 				{
-					memcpy(image_data, data, infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte));
+					std::memcpy(image_data, data, infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte));
 				}
 				else
 				{
@@ -804,9 +805,9 @@ namespace resource_loader
 					for (unsigned int y = 0; y < infoH.height; y++)
 					{
 						// TODO: Create a func def for memcpy and advance
-						memcpy(image_data + row_stride * y, data, row_stride * sizeof(byte));
+						std::memcpy(image_data + row_stride * y, data, row_stride * sizeof(byte));
 						data += row_stride * sizeof(byte);
-						memcpy(padding_row, data, (new_stride - row_stride) * sizeof(byte));
+						std::memcpy(padding_row, data, (new_stride - row_stride) * sizeof(byte));
 						data += (new_stride - row_stride) * sizeof(byte);
 					}
 					free(padding_row);
