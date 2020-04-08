@@ -1,6 +1,6 @@
 // Test file
-#include <iostream>
 #include "FastECS.h"
+#include <iostream>
 
 class Transform : public FCS::Component
 {
@@ -55,26 +55,7 @@ int main(int argc, char* argv[])
 	FCS::SceneManager::LoadScene<MyScene>();
 	FCS::SceneManager::UnloadScene();
 
-	// Single tests
-	/*FCS::Scene scene = FCS::Scene::Create();
-
-	scene.createSystem<TransformSystem>();
-
-
-	FCS::Handle<FCS::Entity> eh1 = scene.instantiate();
-
-	FCS::Handle<Transform> t = eh1->addComponent<Transform>();
-	t->x = 0;
-	t->y = 0;
-	t->z = 0;
-
-	FCS::Handle<FCS::Entity> eh2 = scene.instantiate(eh1);
-	auto t1 = eh2->getComponent<Transform>();
-	t1->x = 2;
-	t1->y = 2;
-	t1->z = 2;
-	
-	scene.deleteSystem<TransformSystem>();*/
+	resource_loader::image_bmp::Image img = resource_loader::image_bmp::read32_24BMP("Shapes.bmp");
 
 	return 0;
 }

@@ -23,6 +23,11 @@ SOFTWARE.
 */
 
 #pragma once
+
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 /* Part of the credit goes to Sam Bloomberg and his repo about ECS, available at: https://github.com/redxdev/ECS */
 // This is my attempt to create a very simplistic unity like engine
 // Still a work in progress
@@ -41,11 +46,15 @@ SOFTWARE.
    TODO 
 
  - Add Rendering
- - Add Scripting
- - Add Mesh loading (prob 3rd party)
- - Add timing
- - Add math commons
+ - Add Scripting (?)
  - Add Physics (prob 3rd party)
+ - Add Timing
+ - Add Math commons
+
+   DONE
+ - ECS
+ - Events
+ - BMP loading
  */
 
 #define FCS_COMPONENT(name) private: virtual std::shared_ptr<Component> clone() override { return std::make_shared<name>(*this); }
@@ -568,5 +577,266 @@ namespace FCS
 	inline std::size_t SceneManager::GetSceneCount()
 	{
 		return Instance().scenes.size();
+	}
+}
+
+// Image loading Code Start Chunk
+// The only supported formats for loading are BMP's
+// There should be a PNG loader later, but as this requires deflation, stick with BMP for now
+namespace resource_loader
+{
+	typedef std::uint8_t uint8;
+	typedef std::uint16_t uint16;
+	typedef std::uint32_t uint32;
+	typedef std::uint64_t uint64;
+
+	typedef std::int32_t int32;
+
+	typedef unsigned char byte;
+	//typedef char byte;
+
+	namespace image_bmp
+	{
+#pragma pack(push, 1)
+		struct FileHeader
+		{
+			uint16 file_type;
+			uint32 file_size;
+			uint16 reserved0;
+			uint16 reserved1;
+			uint32 offset_data;
+		};
+
+		struct InfoHeader
+		{
+			uint32 size;
+			uint32 width;
+			uint32 height;
+
+			uint16 planes;
+			uint16 depth;
+			uint32 compression;
+			uint32 size_img;
+			int32 x_pmeter;
+			int32 y_pmeter;
+			uint32 colors_used;
+			uint32 colors_important;
+		};
+
+		struct ColorHeader
+		{
+			uint32 red_mask;
+			uint32 green_mask;
+			uint32 blue_mask;
+			uint32 alpha_mask;
+
+			uint32 colorspace;
+			uint32 unused[16];
+		};
+#pragma pack(pop)
+
+		struct Image
+		{
+			byte* data;
+			size_t size;
+			uint32 width;
+			uint32 height;
+			uint32 channels;
+		};
+
+		// This is an approach like std::bitset
+		template<std::size_t N>
+		using byte_size =
+			typename std::conditional<N == 8, uint8,
+			typename std::conditional<N == 16, uint16,
+			typename std::conditional<N == 32, uint32,
+			uint64
+			>::type
+			>::type
+			>::type;
+
+		template<std::size_t N>
+		inline static byte_size<N> readNbytes(byte** buffer)
+		{
+			static_assert(N == 8 || N == 16 || N == 32 || N == 64, "Error: not a valid size for readNbytes().");
+			byte_size<N> value;
+			std::size_t s = sizeof(byte_size<N>);
+			std::memcpy((byte*)&value, *buffer, sizeof(byte_size<N>));
+			*buffer += sizeof(byte_size<N>); // Be careful with the buffer overflow
+			return value;
+		}
+
+		template<typename T>
+		inline static T readPackedStruct(byte** buffer)
+		{
+			T value;
+			std::memcpy((byte*)&value, *buffer, sizeof(T));
+			*buffer += sizeof(T);
+			return value;
+		}
+
+		inline static uint32 make_stride_aligned(uint32 align_stride, uint32 row_stride)
+		{
+			uint32_t new_stride = row_stride;
+			while (new_stride % align_stride != 0) 
+			{
+				new_stride++;
+			}
+			return new_stride;
+		}
+
+		inline static Image read32_24BMP(const char* file)
+		{
+			FileHeader fileH;
+			InfoHeader infoH;
+			ColorHeader colorH;
+			byte* data;
+			byte* data_start;
+
+			// Read binary data
+			FILE* f = std::fopen(file, "rb");
+			std::fseek(f, 0, SEEK_END);
+			long fsize = std::ftell(f);
+			std::fseek(f, 0, SEEK_SET);
+
+			data = (byte*)malloc(fsize * sizeof(byte));
+			data_start = data;
+			if (data == nullptr)
+			{
+				return Image(); // TODO: Handle error
+			}
+			else
+			{
+				std::fread(data, 1, fsize, f); // FIX: Error C6386 here...
+			}
+			std::fclose(f);
+
+			fileH = readPackedStruct<FileHeader>(&data);
+
+			// BMP file type specifier
+			if (fileH.file_type != 0x4D42)
+			{
+				if (data_start)
+					free(data_start);
+
+				return Image(); // TODO: Handle error
+			}
+
+			infoH = readPackedStruct<InfoHeader>(&data);
+
+			if (infoH.depth == 32 && infoH.size >= sizeof(InfoHeader) + sizeof(ColorHeader))
+			{
+				colorH = readPackedStruct<ColorHeader>(&data);
+
+				// Check for the color specification - BGRA
+				if (colorH.red_mask != 0x00ff0000 ||
+					colorH.green_mask != 0x0000ff00 ||
+					colorH.blue_mask != 0x000000ff ||
+					colorH.alpha_mask != 0xff000000)
+				{
+					if (data_start)
+						free(data_start);
+
+					return Image(); // TODO: Handle error
+				}
+				// Check for colorspace specification - sRGB
+				if (colorH.colorspace != 0x73524742)
+				{
+					if (data_start)
+						free(data_start);
+
+					return Image(); // TODO: Handle error
+				}
+			}
+
+			// Jump to pixel data (FIX: Memory)
+			data += fileH.offset_data - (sizeof(FileHeader) + sizeof(InfoHeader) + infoH.depth == 32 ? sizeof(ColorHeader) : 0);
+
+			if (infoH.depth == 32)
+			{
+				infoH.size = sizeof(InfoHeader) + sizeof(ColorHeader);
+				fileH.offset_data = sizeof(FileHeader) + sizeof(InfoHeader) + sizeof(ColorHeader);
+			}
+			else
+			{
+				infoH.size = sizeof(InfoHeader);
+				fileH.offset_data = sizeof(FileHeader) + sizeof(InfoHeader);
+			}
+
+			fileH.file_size = fileH.offset_data;
+
+			// Check if BMP is horizontally aligned
+			if (infoH.height < 0)
+			{
+				if (data_start)
+					free(data_start);
+
+				return Image(); // TODO: Handle error
+			}
+
+			byte* image_data = (byte*)malloc(infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte));
+
+			// Check if is required row padding
+			if (infoH.width % 4 == 0)
+			{
+				if (image_data != nullptr)
+				{
+					std::memcpy(image_data, data, infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte));
+				}
+				else
+				{
+					if (data_start)
+						free(data_start);
+					if (image_data)
+						free(image_data);
+
+					return Image(); // TODO: Handle error
+				}
+			}
+			else // Needs row padding
+			{
+				uint32 row_stride = infoH.width * infoH.depth / 8;
+				uint32 new_stride = make_stride_aligned(4, row_stride);
+				byte* padding_row = (byte*)malloc((new_stride - row_stride) * sizeof(byte));
+
+				if (image_data != nullptr && padding_row != nullptr)
+				{
+					for (unsigned int y = 0; y < infoH.height; y++)
+					{
+						// TODO: Create a func def for memcpy and advance
+						std::memcpy(image_data + row_stride * y, data, row_stride * sizeof(byte));
+						data += row_stride * sizeof(byte);
+						std::memcpy(padding_row, data, (new_stride - row_stride) * sizeof(byte));
+						data += (new_stride - row_stride) * sizeof(byte);
+					}
+					free(padding_row);
+					fileH.file_size += infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte) + infoH.height * (new_stride - row_stride) * sizeof(byte);
+				}
+				else
+				{
+					if (data_start)
+						free(data_start);
+					if (image_data)
+						free(image_data);
+
+					return Image(); // TODO: Handle error
+				}
+			}
+
+			if (data_start)
+				free(data_start);
+			if (image_data)
+			{
+				Image i;
+				i.data = image_data;
+				i.size = infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte);
+				i.height = infoH.height;
+				i.width = infoH.width;
+				i.channels = infoH.depth / 8;
+				return i;
+			}
+
+			return Image(); // TODO: Handle error
+		}
 	}
 }
