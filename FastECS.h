@@ -670,7 +670,7 @@ namespace resource_loader
 		inline static T readPackedStruct(byte** buffer)
 		{
 			T value;
-			std::memcpy((byte*)&value, *buffer, sizeof(T));
+			memcpy((byte*)&value, *buffer, sizeof(T));
 			*buffer += sizeof(T);
 			return value;
 		}
@@ -694,10 +694,10 @@ namespace resource_loader
 			byte* data_start;
 
 			// Read binary data
-			FILE* f = std::fopen(file, "rb");
-			std::fseek(f, 0, SEEK_END);
-			long fsize = std::ftell(f);
-			std::fseek(f, 0, SEEK_SET);
+			FILE* f = fopen(file, "rb");
+			fseek(f, 0, SEEK_END);
+			long fsize = ftell(f);
+			fseek(f, 0, SEEK_SET);
 
 			data = (byte*)malloc(fsize * sizeof(byte));
 			data_start = data;
@@ -707,9 +707,9 @@ namespace resource_loader
 			}
 			else
 			{
-				std::fread(data, 1, fsize, f); // FIX: Error C6386 here...
+				fread(data, 1, fsize, f); // FIX: Error C6386 here...
 			}
-			std::fclose(f);
+			fclose(f);
 
 			fileH = readPackedStruct<FileHeader>(&data);
 
@@ -781,7 +781,7 @@ namespace resource_loader
 			{
 				if (image_data != nullptr)
 				{
-					std::memcpy(image_data, data, infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte));
+					memcpy(image_data, data, infoH.width * infoH.height * infoH.depth / 8 * sizeof(byte));
 				}
 				else
 				{
@@ -804,9 +804,9 @@ namespace resource_loader
 					for (unsigned int y = 0; y < infoH.height; y++)
 					{
 						// TODO: Create a func def for memcpy and advance
-						std::memcpy(image_data + row_stride * y, data, row_stride * sizeof(byte));
+						memcpy(image_data + row_stride * y, data, row_stride * sizeof(byte));
 						data += row_stride * sizeof(byte);
-						std::memcpy(padding_row, data, (new_stride - row_stride) * sizeof(byte));
+						memcpy(padding_row, data, (new_stride - row_stride) * sizeof(byte));
 						data += (new_stride - row_stride) * sizeof(byte);
 					}
 					free(padding_row);
