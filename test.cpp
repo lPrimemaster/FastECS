@@ -55,7 +55,11 @@ int main(int argc, char* argv[])
 	FCS::SceneManager::LoadScene<MyScene>();
 	FCS::SceneManager::UnloadScene();
 
-	resource_loader::image_bmp::Image img = resource_loader::image_bmp::read32_24BMP("Shapes.bmp");
+	resource_loader::image_bmp::Image img = resource_loader::image_bmp::read32_24BMP("test.bmp");
+
+	resource_loader::image_bmp::write32_24BMP("test_out.bmp", &img);
+
+	resource_loader::image_bmp::deallocateImg(&img);
 
 	return 0;
 }

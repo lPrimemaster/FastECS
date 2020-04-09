@@ -23,14 +23,11 @@ SOFTWARE.
 */
 
 #pragma once
-
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
 /* Part of the credit goes to Sam Bloomberg and his repo about ECS, available at: https://github.com/redxdev/ECS */
-// This is my attempt to create a very simplistic unity like engine
-// Still a work in progress
 #include <typeindex>
 #include <algorithm>
 #include <cstdint>
@@ -41,6 +38,7 @@ SOFTWARE.
 #include <chrono>
 #include <memory>
 #include <stack>
+
 
 // Shloud define some aspect to draw before the other updates in case this project gets extended
 /* 
@@ -579,6 +577,26 @@ namespace FCS
 	{
 		return Instance().scenes.size();
 	}
+
+	// Use openGL Texture handle here
+	// TODO
+	class Texture
+	{
+	public:
+		Texture(const Texture& texture)
+		{
+
+		}
+		Texture(const Texture&& texture) noexcept
+		{
+
+		}
+
+	private:
+		//resource_loader::image_bmp::Image source;
+		//replace top with bottom
+		//OGLTexture -> GLuint handler;
+	};
 }
 
 // Image loading Code Start Chunk
@@ -645,6 +663,32 @@ namespace resource_loader
 			uint32 channels;
 		};
 
+		inline static Image allocateImage(uint32 w, uint32 h, uint32 channels)
+		{
+			Image img;
+			img.size = w * h * channels * sizeof(byte);
+			img.width = w;
+			img.height = h;
+			img.channels = channels;
+			img.data = (byte*)malloc(img.size);
+
+			if (img.data)
+				return img;
+			return Image();
+		}
+
+		inline static void deallocateImg(Image* img)
+		{
+			if (img->data != nullptr)
+			{
+				free(img->data);
+				img->size = 0;
+				img->width = 0;
+				img->height = 0;
+				img->channels = 0;
+			}
+		}
+
 		// This is an approach like std::bitset
 		template<std::size_t N>
 		using byte_size =
@@ -676,7 +720,13 @@ namespace resource_loader
 			return value;
 		}
 
-		inline static uint32 make_stride_aligned(uint32 align_stride, uint32 row_stride)
+		template<typename T>
+		inline static void writePackedStruct(T value, FILE** f)
+		{
+			fwrite((byte*)&value, sizeof(T), 1, *f);
+		}
+
+		inline static uint32 makeStrideAligned(uint32 align_stride, uint32 row_stride)
 		{
 			uint32_t new_stride = row_stride;
 			while (new_stride % align_stride != 0) 
@@ -708,7 +758,7 @@ namespace resource_loader
 			}
 			else
 			{
-				fread(data, 1, fsize, f); // FIX: Error C6386 here...
+				fread(data, sizeof(byte), fsize, f); // FIX: Error C6386 here...
 			}
 			fclose(f);
 
@@ -740,18 +790,20 @@ namespace resource_loader
 
 					return Image(); // TODO: Handle error
 				}
-				// Check for colorspace specification - sRGB
-				if (colorH.colorspace != 0x73524742)
-				{
-					if (data_start)
-						free(data_start);
 
-					return Image(); // TODO: Handle error
-				}
+				// TODO: Why would this be required !?!?
+				// Check for colorspace specification - sRGB
+				//if (colorH.colorspace != 0x73524742)
+				//{
+				//	if (data_start)
+				//		free(data_start);
+
+				//	return Image(); // TODO: Handle error
+				//}
 			}
 
 			// Jump to pixel data (FIX: Memory)
-			data += fileH.offset_data - (sizeof(FileHeader) + sizeof(InfoHeader) + infoH.depth == 32 ? sizeof(ColorHeader) : 0);
+			data = data_start + fileH.offset_data;
 
 			if (infoH.depth == 32)
 			{
@@ -797,7 +849,7 @@ namespace resource_loader
 			else // Needs row padding
 			{
 				uint32 row_stride = infoH.width * infoH.depth / 8;
-				uint32 new_stride = make_stride_aligned(4, row_stride);
+				uint32 new_stride = makeStrideAligned(4, row_stride);
 				byte* padding_row = (byte*)malloc((new_stride - row_stride) * sizeof(byte));
 
 				if (image_data != nullptr && padding_row != nullptr)
@@ -839,5 +891,104 @@ namespace resource_loader
 
 			return Image(); // TODO: Handle error
 		}
+
+		inline static bool write32_24BMP(const char* file, const Image* img)
+		{
+			FileHeader fileH;
+			InfoHeader infoH;
+
+			infoH.width = img->width;
+			infoH.height = img->height;
+			infoH.colors_important = 0;
+			infoH.colors_used = 0;
+			infoH.compression = 0;
+			infoH.x_pmeter = 0;
+			infoH.y_pmeter = 0;
+			infoH.size_img = img->width * img->height * img->channels;
+			infoH.planes = 1;
+			infoH.size = sizeof(InfoHeader);
+
+			fileH.offset_data = sizeof(FileHeader) + sizeof(InfoHeader);
+			fileH.file_type = 0x4D42;
+
+			FILE* f = fopen(file, "wb");
+
+			if (f == nullptr)
+			{
+				return false;
+			}
+
+			// Write the header
+			if (img->channels == 4) //No stride
+			{
+				ColorHeader colorH;
+
+				infoH.depth = img->channels * 8;
+				infoH.compression = 3; // Alpha
+				infoH.size += sizeof(ColorHeader);
+
+				fileH.offset_data += sizeof(ColorHeader);
+				fileH.file_size = fileH.offset_data + img->width * img->height * 4;
+
+				colorH.red_mask = 0x00ff0000;
+				colorH.green_mask = 0x0000ff00;
+				colorH.blue_mask = 0x000000ff;
+				colorH.alpha_mask = 0xff000000;
+				colorH.colorspace = 0x73524742;
+
+				writePackedStruct(fileH, &f);
+				writePackedStruct(infoH, &f);
+				writePackedStruct(colorH, &f);
+				
+				fwrite(img->data, sizeof(byte), img->width * img->height * 4, f);
+				fclose(f);
+				return true;
+			}
+			else if (img->channels == 3)
+			{
+				infoH.depth = img->channels * 8;
+				infoH.compression = 0; // No Alpha
+				fileH.file_size = fileH.offset_data + img->width * img->height * 3 + infoH.height * (makeStrideAligned(4, img->width * 3) - img->width * 3);
+
+				writePackedStruct(fileH, &f);
+				writePackedStruct(infoH, &f);
+
+				if (img->width % 4 == 0)
+				{
+					fwrite(img->data, sizeof(byte), img->width * img->height * 3, f);
+				}
+				else
+				{
+					uint32 row_stride = img->width * 3;
+					uint32 stride = makeStrideAligned(4, row_stride);
+					byte* padding = (byte*)calloc(stride - row_stride, sizeof(byte));
+					if (padding != nullptr)
+					{
+						for (unsigned int y = 0; y < infoH.height; y++)
+						{
+							fwrite(img->data + row_stride * y, sizeof(byte), row_stride, f);
+							fwrite(padding, sizeof(byte), stride - row_stride, f);
+						}
+						free(padding);
+					}
+				}
+				fclose(f);
+				return true;
+			}
+			fclose(f);
+			return false;
+		}
+	}
+}
+
+namespace opengl_context
+{
+	static inline void initGLAPI()
+	{
+		//if (!gladLoadGLLoader((GLADloadproc)wglGetProcAddress))
+		//{
+		//	// TODO: Handle error failed to init ogl context
+		//	int x = 3;
+		//}
 	}
 }
