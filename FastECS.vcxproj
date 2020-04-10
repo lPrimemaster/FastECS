@@ -123,6 +123,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="cppgl\cppgl.hpp" />
     <ClInclude Include="FastECS.h" />
   </ItemGroup>
   <ItemGroup>

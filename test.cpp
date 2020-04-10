@@ -61,5 +61,20 @@ int main(int argc, char* argv[])
 
 	resource_loader::image_bmp::deallocateImg(&img);
 
+	// Needs refactor -> breakdown in multiple functions
+	if (!rendering::detail::createGLWindow("OpenGL Test Frame", 1280, 720, 16, FALSE))
+	{
+		return 0;
+	}
+
+	GLuint p = glCreateProgram();
+	glUseProgram(p);
+	glDeleteProgram(p);
+
+	while (true)
+	{
+
+	}
+
 	return 0;
 }

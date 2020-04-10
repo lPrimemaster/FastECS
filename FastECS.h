@@ -39,6 +39,10 @@ SOFTWARE.
 #include <memory>
 #include <stack>
 
+#define USE_OPENGL45
+#include "cppgl/cppgl.hpp"
+#include <gl/GLU.h>
+#pragma comment(lib, "opengl32.lib")
 
 // Shloud define some aspect to draw before the other updates in case this project gets extended
 /* 
@@ -981,14 +985,305 @@ namespace resource_loader
 	}
 }
 
-namespace opengl_context
+namespace rendering
 {
-	static inline void initGLAPI()
+	static inline int initGLAPI();
+
+	namespace detail
 	{
-		//if (!gladLoadGLLoader((GLADloadproc)wglGetProcAddress))
-		//{
-		//	// TODO: Handle error failed to init ogl context
-		//	int x = 3;
-		//}
+		struct Window
+		{
+			HGLRC hRC = NULL;
+			HDC hDC = NULL;
+			HWND hWnd = NULL;
+			HINSTANCE hInstance;
+
+			bool keys[256] = { TRUE };
+			bool active = TRUE;
+			bool fullscreen = TRUE;
+		};
+
+		bool current_active_WNDPROC = TRUE;
+		bool current_window_keys[256];
+
+		LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+
+		inline void resizeGLWindow(GLsizei w, GLsizei h)
+		{
+			//glViewport(0, 0, w, h);
+		}
+
+		inline int initGLBare()
+		{
+			glShadeModel(GL_SMOOTH);
+			glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+			glClearDepth(1.0f);
+			glEnable(GL_DEPTH_TEST); // CHECK: This might not be required for 2D
+			glDepthFunc(GL_LEQUAL);
+			glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+			return TRUE;
+		}
+
+		inline void closeGLWindow(Window* window)
+		{
+			if (window->fullscreen)
+			{
+				ChangeDisplaySettings(NULL, 0);
+				ShowCursor(TRUE);
+			}
+			if (window->hRC)
+			{
+				if (!wglMakeCurrent(NULL, NULL))
+				{
+					MessageBox(NULL, "Release Of DC And RC Failed.", "SHUTDOWN ERROR", MB_OK | MB_ICONINFORMATION);
+				}
+				if (!wglDeleteContext(window->hRC))
+				{
+					MessageBox(NULL, "Release Rendering Context Failed.", "SHUTDOWN ERROR", MB_OK | MB_ICONINFORMATION);
+				}
+				window->hRC = NULL;
+			}
+
+			if (window->hDC && !ReleaseDC(window->hWnd, window->hDC))
+			{
+				MessageBox(NULL, "Release Device Context Failed.", "SHUTDOWN ERROR", MB_OK | MB_ICONINFORMATION);
+				window->hDC = NULL;
+			}
+
+			if (window->hWnd && !DestroyWindow(window->hWnd))
+			{
+				MessageBox(NULL, "Could Not Release hWnd.", "SHUTDOWN ERROR", MB_OK | MB_ICONINFORMATION);
+				window->hWnd = NULL;
+			}
+
+			if (!UnregisterClass("OpenGL", window->hInstance))
+			{
+				MessageBox(NULL, "Could Not Unregister Class.", "SHUTDOWN ERROR", MB_OK | MB_ICONINFORMATION);
+				window->hInstance = NULL;
+			}
+		}
+
+		BOOL createGLWindow(const char* title, int width, int height, int bits, bool fullscreenFlag)
+		{
+			Window w;
+
+			GLuint pixelFormat;
+			WNDCLASS wc;
+
+			DWORD dwExStyle;
+			DWORD dwStyle;
+
+			RECT windowRect;
+			windowRect.left = 0L;
+			windowRect.right = (LONG)width;
+			windowRect.top = 0L;
+			windowRect.bottom = (LONG)height;
+
+			w.fullscreen = fullscreenFlag;
+			w.hInstance = GetModuleHandle(NULL);
+			wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+			wc.lpfnWndProc = (WNDPROC)WndProc;
+			wc.cbClsExtra = 0;
+			wc.cbWndExtra = 0;
+			wc.hInstance = w.hInstance;
+			wc.hIcon = LoadIcon(NULL, IDI_WINLOGO);
+			wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+			wc.hbrBackground = NULL;
+			wc.lpszMenuName = NULL;
+			wc.lpszClassName = "OpenGL";
+
+			if (!RegisterClass(&wc))
+			{
+				MessageBox(NULL, "Failed To Register The Window Class.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+
+			if (w.fullscreen)
+			{
+				DEVMODE dmscreenSettings;
+				memset(&dmscreenSettings, 0, sizeof(dmscreenSettings));
+				dmscreenSettings.dmSize = sizeof(dmscreenSettings);
+				dmscreenSettings.dmPelsWidth = width;
+				dmscreenSettings.dmPelsHeight = height;
+				dmscreenSettings.dmBitsPerPel = bits;
+				dmscreenSettings.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
+
+				if (ChangeDisplaySettings(&dmscreenSettings, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL)
+				{
+					if (MessageBox(NULL, "The Requested Fullscreen Mode Is Not Supported By\nYour Video Card. Use Windowed Mode Instead?", "NeHe GL", MB_YESNO | MB_ICONEXCLAMATION) == IDYES)
+					{
+						w.fullscreen = FALSE;
+					}
+					else
+					{
+						MessageBox(NULL, "Program Will Now Close.", "ERROR", MB_OK | MB_ICONSTOP);
+						return FALSE;
+					}
+				}
+			}
+
+			if (w.fullscreen)
+			{
+				dwExStyle = WS_EX_APPWINDOW;
+				dwStyle = WS_POPUP;
+				ShowCursor(FALSE);
+			}
+			else
+			{
+				dwExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
+				dwStyle = WS_OVERLAPPEDWINDOW;
+			}
+
+			AdjustWindowRectEx(&windowRect, dwStyle, FALSE, dwExStyle);
+
+			if (!(w.hWnd = CreateWindowEx(dwExStyle,
+				"OpenGL",
+				title,
+				WS_CLIPSIBLINGS | WS_CLIPCHILDREN | dwStyle,
+				0, 0,
+				windowRect.right - windowRect.left,
+				windowRect.bottom - windowRect.top,
+				NULL,
+				NULL,
+				w.hInstance,
+				NULL)))
+			{
+				closeGLWindow(&w);
+				MessageBox(NULL, "Window Creation Error.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+
+			static  PIXELFORMATDESCRIPTOR pfd =     // Tells Windows How We Want Things To Be
+			{
+				sizeof(PIXELFORMATDESCRIPTOR),      // Size Of This Pixel Format Descriptor
+				1,									// Version Number
+				PFD_DRAW_TO_WINDOW |                // Format Must Support Window
+				PFD_SUPPORT_OPENGL |                // Format Must Support OpenGL
+				PFD_DOUBLEBUFFER,                   // Must Support Double Buffering
+				PFD_TYPE_RGBA,                      // Request An RGBA Format
+				(BYTE)bits,                               // Select Our Color Depth
+				0, 0, 0, 0, 0, 0,                   // Color Bits Ignored
+				0,									// No Alpha Buffer
+				0,									// Shift Bit Ignored
+				0,									// No Accumulation Buffer
+				0, 0, 0, 0,                         // Accumulation Bits Ignored
+				16,									// 16Bit Z-Buffer (Depth Buffer)
+				0,									// No Stencil Buffer
+				0,									// No Auxiliary Buffer
+				PFD_MAIN_PLANE,                     // Main Drawing Layer
+				0,									// Reserved
+				0, 0, 0                             // Layer Masks Ignored
+			};
+
+			if (!(w.hDC = GetDC(w.hWnd)))
+			{
+				closeGLWindow(&w);
+				MessageBox(NULL, "Can't Create A GL Device Context.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+
+			if (!(pixelFormat = ChoosePixelFormat(w.hDC, &pfd)))
+			{
+				closeGLWindow(&w);
+				MessageBox(NULL, "Can't Find A Suitable PixelFormat.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+
+			if (!SetPixelFormat(w.hDC, pixelFormat, &pfd))
+			{
+				closeGLWindow(&w);
+				MessageBox(NULL, "Can't Set The PixelFormat.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+
+			if (!(w.hRC = wglCreateContext(w.hDC)))
+			{
+				closeGLWindow(&w);
+				MessageBox(NULL, "Can't Create A GL Rendering Context.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+
+			if (!wglMakeCurrent(w.hDC, w.hRC))
+			{
+				closeGLWindow(&w);
+				MessageBox(NULL, "Can't Activate The GL Rendering Context.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+
+			int success = initGLAPI();
+
+			ShowWindow(w.hWnd, SW_SHOW);
+			SetForegroundWindow(w.hWnd);
+			SetFocus(w.hWnd);
+			resizeGLWindow(width, height);
+
+			if (!initGLBare())
+			{
+				closeGLWindow(&w);
+				MessageBox(NULL, "Initialization Failed.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				return FALSE;
+			}
+			return TRUE;
+		}
+
+		LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+		{
+			switch (uMsg)
+			{
+			case WM_ACTIVATE:
+			{
+				if (!HIWORD(wParam))
+				{
+					current_active_WNDPROC = TRUE;
+				}
+				else
+				{
+					current_active_WNDPROC = FALSE;
+				}
+				return 0;
+			}
+			case WM_SYSCOMMAND:
+			{
+				switch (wParam)
+				{
+				case SC_SCREENSAVE:
+				case SC_MONITORPOWER:
+					return 0;
+				}
+				break;
+			}
+			case WM_CLOSE:
+			{
+				PostQuitMessage(0);
+				return 0;
+			}
+			case WM_KEYDOWN:
+			{
+				current_window_keys[wParam] = TRUE;
+				return 0;
+			}
+			case WM_KEYUP:
+			{
+				current_window_keys[wParam] = FALSE;
+			}
+			case WM_SIZE:
+			{
+				resizeGLWindow(LOWORD(lParam), HIWORD(lParam));
+				return 0;
+			}
+			}
+			return DefWindowProc(hWnd, uMsg, wParam, lParam);
+		}
+	}
+
+	static inline detail::Window* windowCreateAndMakeCurrent()
+	{
+		// TODO
+	}
+
+	static inline int initGLAPI()
+	{
+		// 3rd party library to load all OpenGL 4.5 extensions and functions 
+		return cppglLoadGL();
 	}
 }
