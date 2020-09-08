@@ -1,5 +1,5 @@
 # FastECS
-A header only simplistic C++ ECS Engine for general purpose (with GC!)
+A header only simplistic C++ ECS Engine for general purpose (with GCish with RTTI!)
 
 | Branch |                                    Build Status                                   |
 |--------|:---------------------------------------------------------------------------------:|
